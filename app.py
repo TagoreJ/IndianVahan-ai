@@ -333,22 +333,16 @@ with tab2:
                 # 2. Year-wise Totals (The "Trend")
                 yearly_totals = df_vahan.groupby('Year')['Total'].sum().to_dict()
                 
-                # 3. Deep Dive: Top Categories & States per Year (Visual Matrix)
-                # We create a simplified structure: {2024: {Top_Cats: [...], Top_States: [...]}}
-                deep_context = {}
-                for yr in all_years[-3:]: # Focus on last 3 years for detailed breakdown to save tokens
-                    yr_df = df_vahan[df_vahan['Year'] == yr]
-                    top_cats = yr_df.groupby('Category')['Total'].sum().nlargest(5).to_dict()
-                    top_states = yr_df.groupby('State')['Total'].sum().nlargest(5).to_dict()
-                    deep_context[yr] = {
-                        "Total": yearly_totals.get(yr, 0),
-                        "Top Categories": top_cats,
-                        "Top States": top_states
-                    }
-                    
-                # 4. Global Top Performers (All Time)
-                global_state_rank = df_vahan.groupby('State')['Total'].sum().nlargest(10).to_dict()
-                global_cat_rank = df_vahan.groupby('Category')['Total'].sum().nlargest(10).to_dict()
+                # 3. FULL CATEGORY BREAKDOWN (All Years)
+                # This ensures we know exactly which category did what in 2025 vs 2024 etc.
+                cat_pivot = df_vahan.pivot_table(index='Year', columns='Category', values='Total', aggfunc='sum').fillna(0)
+                cat_context = cat_pivot.to_string() # Contains EVERYTHING category-wise
+                
+                # 4. FULL STATE BREAKDOWN (Recent Years Focus)
+                # To keep context manageable, we give full state details for the last 3 years
+                recent_states_df = df_vahan[df_vahan['Year'].isin(all_years[-3:])]
+                state_pivot = recent_states_df.pivot_table(index='State', columns='Year', values='Total', aggfunc='sum').fillna(0)
+                state_context = state_pivot.to_string()
 
                 rich_context = f"""
                 DATASET SUMMARY:
@@ -356,28 +350,24 @@ with tab2:
                 - Years Covered: {all_years}
                 - Total Registered Vehicles: {total_volume}
 
-                YEARLY TRENDS (Total Registrations):
-                {yearly_totals}
+                SECTION A: COMPLETE CATEGORY TRENDS (Year x Category Matrix)
+                {cat_context}
 
-                RECENT YEARS DETAILED BREAKDOWN (Last 3 Years):
-                {deep_context}
-
-                ALL-TIME TOP PERFORMERS:
-                - Top 10 States: {global_state_rank}
-                - Top 10 Categories: {global_cat_rank}
+                SECTION B: RECENT STATE PERFORMANCE (State x Recent Years Matrix)
+                {state_context}
                 """
                 
-                system_prompt = f"""You are a Senior Automobile Data Analyst.
-                Your goal is to answer the user's question accurately using ONLY the provided data summary.
+                system_prompt = f"""You are a helpful and knowledgeable Senior Automobile Data Analyst.
                 
                 DATA CONTEXT:
                 {rich_context}
                 
                 GUIDELINES:
-                1. USE THE DATA: If asked "which has more in 2025", look at the 'RECENT YEARS DETAILED BREAKDOWN' for 2025 and compare the Top Categories or States listed there.
-                2. If the user asks for a specific year's data that is in the summary, quote the exact number.
-                3. If the answer is truly not in the summary (e.g., a specific tiny village not in the top lists), state: "The provided summary tracks top performers. I don't have granular data for that specific segment."
-                4. Be concise and professional.
+                1. ANSWER FREELY: You have the full aggregated data for Categories and recent State performance. Use this to answer clearly.
+                2. NO REFUSALS: Do not say 'I do not have granular data' unless it's truly impossible (e.g., asking for specific city/village which is not in the State list). 
+                3. MAKE COMPARISONS: If asked 'which has more', compare the numbers in the matrix and give the winner.
+                4. BE ESTIMATIVE: If a user asks about a year not fully detailed for states (older years), use the general trends or the Total Yearly numbers to give a best-effort answer.
+                5. TONE: Professional, confident, and direct.
                 
                 User Question: {user_query}
                 """
