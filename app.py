@@ -3,14 +3,10 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-from pandasai import SmartDataframe
-from pandasai.llm import OpenAI as PandasAI_OpenAI
 from openai import OpenAI
-from sklearn.linear_model import LinearRegression
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
 import io
 import os
+import warnings
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -267,7 +263,13 @@ with tab2:
     
     # API Key Retrieval
     try:
-        api_key = st.secrets["secrets"]["OPENROUTER_API_KEY"]
+        # Check for direct key or nested key (handles both local [secrets] section and Cloud's flat secrets)
+        if "OPENROUTER_API_KEY" in st.secrets:
+            api_key = st.secrets["OPENROUTER_API_KEY"]
+        elif "secrets" in st.secrets and "OPENROUTER_API_KEY" in st.secrets["secrets"]:
+            api_key = st.secrets["secrets"]["OPENROUTER_API_KEY"]
+        else:
+            api_key = None
     except Exception:
         api_key = None
         
@@ -278,7 +280,6 @@ with tab2:
     mode = st.radio("Select AI Mode", ["📊 Graph Maker (PandasAI)", "🧠 Auto Analyst (Expert Chat)"], horizontal=True)
     
     user_query = st.text_area("Ask about your data:", help="e.g., 'Show me the trend of EVs' or 'Why did sales drop in 2020?'")
-
     
     if st.button("🚀 Analyze"):
         if not user_query:
@@ -287,27 +288,15 @@ with tab2:
             if "Graph Maker" in mode:
                 st.subheader("Generated Graph")
                 try:
-                    llm = PandasAI_OpenAI(api_token=api_key, model="openai/gpt-4o-mini") # Using a generic model mapping for OpenRouter if compatible or standard OpenAI
-                    # Getting OpenRouter Base URL if needed, but PandasAI defaults to OpenAI. 
-                    # For OpenRouter with PandasAI, we might need custom config. 
-                    # Let's try standard instantiated LLM first or custom.
-                    
-                    # Correct configuration for OpenRouter in PandasAI can be tricky.
-                    # We will use the direct OpenAI client compatible formatting if available, 
-                    # or standard Generic LLM. 
-                    
-                    # For simplicity in this reliable demo, let's assume standard OpenAI structure works or use the 'openai' param 
-                    # with base_url if supported. PandasAI 2.0+ supports custom connectors.
-                    
-                    # Workaround: PandasAI might not support OpenRouter out of the box easily without custom wrapper.
-                    # I will use a simple custom wrapper or try defining base_url if the library allows.
-                    # Checking PandasAI docs logic: it allows `OpenAI(api_token=..., base_url=...)`
+                    # LAZY IMPORT PANDASAI
+                    from pandasai import SmartDataframe
+                    from pandasai.llm import OpenAI as PandasAI_OpenAI
                     
                     # LLM configuration
                     llm_config = {
                         "api_key": api_key,
                         "openai_proxy": "https://openrouter.ai/api/v1",
-                        "model": "google/gemini-2.0-flash-001" # Using a fast model
+                        "model": "google/gemini-2.0-flash-001" 
                     }
                     
                     # Re-instantiate with proxy
@@ -322,7 +311,7 @@ with tab2:
                         st.write(response)
                         
                 except Exception as e:
-                    st.error(f"PandasAI Error: {e}")
+                    st.error(f"PandasAI Error (Check compatibility): {e}")
             
             else: # Auto Analyst
                 st.subheader("Analyst Insight")
@@ -367,30 +356,39 @@ with tab3:
     # 1. FORECASTING
     with col1:
         st.subheader("🔮 Sales Forecasting")
-        
-        # Prepare data
-        forecast_df = df_vahan.groupby('Year')['Total'].sum().reset_index()
-        
-        X = forecast_df[['Year']]
-        y = forecast_df['Total']
-        
-        model = LinearRegression()
-        model.fit(X, y)
-        
-        future_years = [2024, 2025, 2026]
-        predictions = model.predict(pd.DataFrame(future_years, columns=['Year']))
-        
-        future_df = pd.DataFrame({'Year': future_years, 'Total': predictions, 'Type': 'Forecast'})
-        forecast_df['Type'] = 'Actual'
-        
-        combined_df = pd.concat([forecast_df, future_df])
-        
-        fig_forecast = px.line(combined_df, x='Year', y='Total', color='Type', 
-                              markers=True, title='Projected Registrations (Linear Regression)')
-        fig_forecast.add_annotation(x=2026, y=predictions[-1], text="2026 Prediction", showarrow=True, arrowhead=1)
-        st.plotly_chart(fig_forecast, use_container_width=True)
-        
-        st.info(f"Projected Growth: The model predicts a steady trend based on historical data.")
+        try:
+            from sklearn.linear_model import LinearRegression
+            
+            # Prepare data
+            forecast_df = df_vahan.groupby('Year')['Total'].sum().reset_index()
+            
+            if len(forecast_df) > 1:
+                X = forecast_df[['Year']]
+                y = forecast_df['Total']
+                
+                model = LinearRegression()
+                model.fit(X, y)
+                
+                future_years = [2024, 2025, 2026]
+                predictions = model.predict(pd.DataFrame(future_years, columns=['Year']))
+                
+                future_df = pd.DataFrame({'Year': future_years, 'Total': predictions, 'Type': 'Forecast'})
+                forecast_df['Type'] = 'Actual'
+                
+                combined_df = pd.concat([forecast_df, future_df])
+                
+                fig_forecast = px.line(combined_df, x='Year', y='Total', color='Type', 
+                                    markers=True, title='Projected Registrations (Linear Regression)')
+                fig_forecast.add_annotation(x=2026, y=predictions[-1], text="2026 Prediction", showarrow=True, arrowhead=1)
+                st.plotly_chart(fig_forecast, use_container_width=True)
+                
+                st.info(f"Projected Growth: The model predicts a steady trend based on historical data.")
+            else:
+                st.warning("Not enough data points for forecasting.")
+        except ImportError:
+            st.error("Sklearn not installed.")
+        except Exception as e:
+            st.error(f"Forecasting Error: {e}")
 
     # 2. SEASONALITY
     with col2:
@@ -400,18 +398,21 @@ with tab3:
             # Aggregate
             heatmap_data = df_vahan.groupby(['Year', 'Month'])['Total'].sum().reset_index()
             
-            # Pivot for Heatmap
-            pivot_table = heatmap_data.pivot(index='Year', columns='Month', values='Total').fillna(0)
-            
-            # Sort Months logically if possible (requires mapping)
-            month_order = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
-            # Reindex columns if they match standard names (or subset of them)
-            existing_months = [m for m in month_order if m in pivot_table.columns]
-            pivot_table = pivot_table[existing_months]
-            
-            fig_heat = px.imshow(pivot_table, text_auto=True, aspect="auto", 
-                                color_continuous_scale='Viridis', title='Monthly Registration Intensity')
-            st.plotly_chart(fig_heat, use_container_width=True)
+            if not heatmap_data.empty:
+                # Pivot for Heatmap
+                pivot_table = heatmap_data.pivot(index='Year', columns='Month', values='Total').fillna(0)
+                
+                # Sort Months logically if possible (requires mapping)
+                month_order = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+                # Reindex columns if they match standard names (or subset of them)
+                existing_months = [m for m in month_order if m in pivot_table.columns]
+                pivot_table = pivot_table[existing_months]
+                
+                fig_heat = px.imshow(pivot_table, text_auto=True, aspect="auto", 
+                                    color_continuous_scale='Viridis', title='Monthly Registration Intensity')
+                st.plotly_chart(fig_heat, use_container_width=True)
+            else:
+                st.warning("No data for heatmap.")
         else:
             st.warning("Month column not found for seasonality analysis.")
 
@@ -425,6 +426,9 @@ with tab4:
     
     if st.button("📥 Download Report"):
         try:
+            from reportlab.lib.pagesizes import letter
+            from reportlab.pdfgen import canvas
+            
             buffer = io.BytesIO()
             c = canvas.Canvas(buffer, pagesize=letter)
             width, height = letter
@@ -444,11 +448,12 @@ with tab4:
             total_reg = df_vahan['Total'].sum()
             c.drawString(50, height - 150, f"Total Registrations: {total_reg:,.0f}")
             
-            top_st = df_vahan.groupby('State')['Total'].sum().idxmax()
-            c.drawString(50, height - 175, f"Top Performing State: {top_st}")
-            
-            top_cat = df_vahan.groupby('Category')['Total'].sum().idxmax()
-            c.drawString(50, height - 200, f"Dominant Category: {top_cat}")
+            if not df_vahan.empty:
+                top_st = df_vahan.groupby('State')['Total'].sum().idxmax()
+                c.drawString(50, height - 175, f"Top Performing State: {top_st}")
+                
+                top_cat = df_vahan.groupby('Category')['Total'].sum().idxmax()
+                c.drawString(50, height - 200, f"Dominant Category: {top_cat}")
             
             # Insight Text
             c.line(50, height - 220, width - 50, height - 220)
@@ -479,5 +484,7 @@ with tab4:
                 mime="application/pdf"
             )
             
+        except ImportError:
+            st.error("ReportLab not installed.")
         except Exception as e:
             st.error(f"Error generating PDF: {e}")
