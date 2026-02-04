@@ -194,7 +194,7 @@ with tab1:
         top_state = filtered_df.groupby('State')['Total'].sum().idxmax() if not filtered_df.empty else "N/A"
         
         # Growth Metric Calculation
-        growth_text = "N/A"
+        growth_text = ""  # Default empty
         delta_color = "off"
         if len(selected_years) == 1:
             current_yr = selected_years[0]
@@ -217,11 +217,15 @@ with tab1:
                 delta_color = "normal" if growth > 0 else "inverse"
 
         col1, col2, col3 = st.columns(3)
+        
+        # Logic to hide growth text if not ready
+        growth_display = f'<p style="color: {"lightgreen" if "⬆️" in growth_text else "#ffcccb"}">{growth_text}</p>' if growth_text else ""
+        
         col1.markdown(f"""
             <div class="metric-card">
                 <h3>Total Registrations 🚗</h3>
                 <h2>{total_vehicles:,.0f}</h2>
-                <p style="color: {'lightgreen' if '⬆️' in growth_text else '#ffcccb'}">{growth_text}</p>
+                {growth_display}
             </div>
         """, unsafe_allow_html=True)
         
@@ -270,7 +274,7 @@ with tab1:
                 cat_total = cat_df['Total'].sum()
                 
                 # Simple YoY estimation if single year selected
-                yoy_growth = "N/A"
+                yoy_growth = "-"
                 if len(selected_years) == 1:
                      prev_cat_df = df_vahan[(df_vahan['Year'] == selected_years[0]-1) & (df_vahan['Category'] == cat)]
                      p_val = prev_cat_df['Total'].sum()
@@ -598,3 +602,18 @@ with tab4:
             st.error("ReportLab not installed.")
         except Exception as e:
             st.error(f"Error generating PDF: {e}")
+
+# ================================================
+# FOOTER
+# ================================================
+st.markdown("---")
+st.markdown("""
+<div style="text-align: center; color: #666; font-size: 0.8rem;">
+    Data retrieved from <a href="https://vahan.parivahan.gov.in/vahan4dashboard/">vahan.parivahan.gov.in</a> | 
+    Dashboard developed by <a href="https://www.linkedin.com/in/tagorej/">Tagore J</a>
+    <br>
+    <em>Disclaimer: Data extracted via Selenium scraping; subject to extraction limitations.</em>
+    <br>
+    <span style="font-size: 0.7rem; color: #888;">Version 1.0 • More updates coming soon! 🚀</span>
+</div>
+""", unsafe_allow_html=True)
