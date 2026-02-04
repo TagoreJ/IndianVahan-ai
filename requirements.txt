@@ -1,12 +1,8 @@
-streamlit
+streamlit>=1.41.0
 pandas
 numpy
 plotly
 pandasai
 openai
-scipy
 scikit-learn
-statsmodels
-matplotlib
-seaborn
-openpyxl
+reportlab

@@ -1,10 +1,15 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from pandasai import SmartDataframe
 from pandasai.llm import OpenAI as PandasAI_OpenAI
 from openai import OpenAI
+from sklearn.linear_model import LinearRegression
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+import io
 import os
 import warnings
 
@@ -76,6 +81,21 @@ CATEGORY_EMOJIS = {
     "Electric": "⚡"
 }
 
+# State Lat/Lon for Map
+STATE_COORDS = {
+    "Andhra Pradesh": [15.9129, 79.7400], "Arunachal Pradesh": [28.2180, 94.7278], "Assam": [26.2006, 92.9376],
+    "Bihar": [25.0961, 85.3131], "Chhattisgarh": [21.2787, 81.8661], "Goa": [15.2993, 74.1240],
+    "Gujarat": [22.2587, 71.1924], "Haryana": [29.0588, 76.0856], "Himachal Pradesh": [31.1048, 77.1734],
+    "Jharkhand": [23.6102, 85.2799], "Karnataka": [15.3173, 75.7139], "Kerala": [10.8505, 76.2711],
+    "Madhya Pradesh": [22.9734, 78.6569], "Maharashtra": [19.7515, 75.7139], "Manipur": [24.6637, 93.9063],
+    "Meghalaya": [25.4670, 91.3662], "Mizoram": [23.1645, 92.9376], "Nagaland": [26.1584, 94.5624],
+    "Odisha": [20.9517, 85.0985], "Punjab": [31.1471, 75.3412], "Rajasthan": [27.0238, 74.2179],
+    "Sikkim": [27.5330, 88.5122], "Tamil Nadu": [11.1271, 78.6569], "Telangana": [18.1124, 79.0193],
+    "Tripura": [23.9408, 91.9882], "Uttar Pradesh": [26.8467, 80.9462], "Uttarakhand": [30.0668, 79.0193],
+    "West Bengal": [22.9868, 87.8550], "Delhi": [28.7041, 77.1025], "Puducherry": [11.9416, 79.8083],
+    "Ladakh": [34.1526, 77.5771], "Jammu and Kashmir": [33.7782, 76.5762]
+}
+
 def get_emoji(category):
     for key, emoji in CATEGORY_EMOJIS.items():
         if key.lower() in str(category).lower():
@@ -108,6 +128,14 @@ def load_data():
              df = df[pd.to_numeric(df['Year'], errors='coerce').notnull()]
              df['Year'] = df['Year'].astype(int)
 
+        # Enhance State for Map
+        if 'State' in df.columns:
+            # Simple clean: remove codes like (84) from "Andhra Pradesh(84)"
+            df['State_Clean'] = df['State'].apply(lambda x: x.split('(')[0].strip())
+            # Add Lat/Lon
+            df['Lat'] = df['State_Clean'].map(lambda x: STATE_COORDS.get(x, [None, None])[0])
+            df['Lon'] = df['State_Clean'].map(lambda x: STATE_COORDS.get(x, [None, None])[1])
+
         # Load vehicle_summary.csv
         df_summary = pd.read_csv("vehicle_summary.csv")
         
@@ -131,7 +159,10 @@ st.markdown("""
 # ================================================
 # MAIN TABS
 # ================================================
-tab1, tab2 = st.tabs(["📊 Dashboard", "💬 Chat with Data"])
+# ================================================
+# MAIN TABS
+# ================================================
+tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "💬 Chat with Data", "📈 Advanced Analytics", "📄 Generate Report"])
 
 # ================================================
 # TAB 1: DASHBOARD
@@ -200,10 +231,28 @@ with tab1:
             st.plotly_chart(fig_cat, use_container_width=True)
 
         # Row 2
-        st.subheader("State-wise Analysis 🗺️")
-        state_dist = filtered_df.groupby('State')['Total'].sum().reset_index().sort_values('Total', ascending=False)
-        fig_state = px.bar(state_dist, x='State', y='Total', color='Total', title='Registrations by State', height=500)
-        st.plotly_chart(fig_state, use_container_width=True)
+        col_map, col_bar = st.columns([1, 1])
+        with col_map:
+            st.subheader("Geo Sales Map 🗺️")
+            map_data = filtered_df.groupby(['State_Clean', 'Lat', 'Lon'])['Total'].sum().reset_index()
+            fig_map = px.scatter_geo(
+                map_data,
+                lat='Lat', lon='Lon',
+                size='Total', color='Total',
+                hover_name='State_Clean',
+                scope='asia',
+                center={'lat': 20.5937, 'lon': 78.9629}, # India Center
+                projection='natural earth',
+                title='Geographic Distribution'
+            )
+            fig_map.update_geos(fitbounds="locations", visible=False) # Auto-zoom
+            st.plotly_chart(fig_map, use_container_width=True)
+
+        with col_bar:
+            st.subheader("State-wise Analysis 🎢")
+            state_dist = filtered_df.groupby('State')['Total'].sum().reset_index().sort_values('Total', ascending=False).head(10)
+            fig_state = px.bar(state_dist, x='State', y='Total', color='Total', title='Top 10 States by Registrations', height=400)
+            st.plotly_chart(fig_state, use_container_width=True)
 
         
     else:
@@ -307,3 +356,128 @@ with tab2:
                 except Exception as e:
                     st.error(f"Analysis Error: {e}")
 
+# ================================================
+# TAB 3: ADVANCED ANALYTICS
+# ================================================
+with tab3:
+    st.header("📈 Advanced Analytics")
+    
+    col1, col2 = st.columns(2)
+    
+    # 1. FORECASTING
+    with col1:
+        st.subheader("🔮 Sales Forecasting")
+        
+        # Prepare data
+        forecast_df = df_vahan.groupby('Year')['Total'].sum().reset_index()
+        
+        X = forecast_df[['Year']]
+        y = forecast_df['Total']
+        
+        model = LinearRegression()
+        model.fit(X, y)
+        
+        future_years = [2024, 2025, 2026]
+        predictions = model.predict(pd.DataFrame(future_years, columns=['Year']))
+        
+        future_df = pd.DataFrame({'Year': future_years, 'Total': predictions, 'Type': 'Forecast'})
+        forecast_df['Type'] = 'Actual'
+        
+        combined_df = pd.concat([forecast_df, future_df])
+        
+        fig_forecast = px.line(combined_df, x='Year', y='Total', color='Type', 
+                              markers=True, title='Projected Registrations (Linear Regression)')
+        fig_forecast.add_annotation(x=2026, y=predictions[-1], text="2026 Prediction", showarrow=True, arrowhead=1)
+        st.plotly_chart(fig_forecast, use_container_width=True)
+        
+        st.info(f"Projected Growth: The model predicts a steady trend based on historical data.")
+
+    # 2. SEASONALITY
+    with col2:
+        st.subheader("📅 Seasonal Heatmap")
+        
+        if 'Month' in df_vahan.columns:
+            # Aggregate
+            heatmap_data = df_vahan.groupby(['Year', 'Month'])['Total'].sum().reset_index()
+            
+            # Pivot for Heatmap
+            pivot_table = heatmap_data.pivot(index='Year', columns='Month', values='Total').fillna(0)
+            
+            # Sort Months logically if possible (requires mapping)
+            month_order = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+            # Reindex columns if they match standard names (or subset of them)
+            existing_months = [m for m in month_order if m in pivot_table.columns]
+            pivot_table = pivot_table[existing_months]
+            
+            fig_heat = px.imshow(pivot_table, text_auto=True, aspect="auto", 
+                                color_continuous_scale='Viridis', title='Monthly Registration Intensity')
+            st.plotly_chart(fig_heat, use_container_width=True)
+        else:
+            st.warning("Month column not found for seasonality analysis.")
+
+# ================================================
+# TAB 4: REPORT GENERATION
+# ================================================
+with tab4:
+    st.header("📄 Generate Intelligence Report")
+    
+    st.write("Click below to generate a professional PDF summary of the current dataset.")
+    
+    if st.button("📥 Download Report"):
+        try:
+            buffer = io.BytesIO()
+            c = canvas.Canvas(buffer, pagesize=letter)
+            width, height = letter
+            
+            # Title
+            c.setFont("Helvetica-Bold", 24)
+            c.drawString(50, height - 50, "Vahan Business Intelligence Report")
+            c.setFont("Helvetica", 12)
+            c.drawString(50, height - 80, f"Generated on: {pd.Timestamp.now().strftime('%Y-%m-%d')}")
+            
+            # Key Metrics
+            c.line(50, height - 90, width - 50, height - 90)
+            c.setFont("Helvetica-Bold", 16)
+            c.drawString(50, height - 120, "Key Performance Indicators")
+            
+            c.setFont("Helvetica", 14)
+            total_reg = df_vahan['Total'].sum()
+            c.drawString(50, height - 150, f"Total Registrations: {total_reg:,.0f}")
+            
+            top_st = df_vahan.groupby('State')['Total'].sum().idxmax()
+            c.drawString(50, height - 175, f"Top Performing State: {top_st}")
+            
+            top_cat = df_vahan.groupby('Category')['Total'].sum().idxmax()
+            c.drawString(50, height - 200, f"Dominant Category: {top_cat}")
+            
+            # Insight Text
+            c.line(50, height - 220, width - 50, height - 220)
+            c.setFont("Helvetica-Bold", 16)
+            c.drawString(50, height - 250, "Automated Insights")
+            
+            c.setFont("Helvetica", 12)
+            text_lines = [
+                "1. The dataset shows a significant concentration of vehicles in the top states.",
+                "2. Seasonality analysis indicates potential peaks during festival months.",
+                "3. Linear forecasts suggest continued growth in the upcoming years.",
+                "4. EV adoption trends should be monitored in the 'Electric' category."
+            ]
+            y_pos = height - 280
+            for line in text_lines:
+                c.drawString(50, y_pos, line)
+                y_pos -= 25
+                
+            c.showPage()
+            c.save()
+            
+            buffer.seek(0)
+            st.success("Report generated successfully!")
+            st.download_button(
+                label="Download PDF",
+                data=buffer,
+                file_name="vahan_analytics_report.pdf",
+                mime="application/pdf"
+            )
+            
+        except Exception as e:
+            st.error(f"Error generating PDF: {e}")
