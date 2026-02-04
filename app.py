@@ -169,7 +169,10 @@ with tab1:
         with st.expander("🔎 Filters", expanded=True):
             c1, c2, c3 = st.columns(3)
             with c1:
-                selected_states = st.multiselect("Select State", options=df_vahan['State'].unique(), default=df_vahan['State'].unique()[:1])
+                # State Options with "All India"
+                all_states = sorted(df_vahan['State'].unique().tolist())
+                state_options = ["All India"] + all_states
+                selected_states = st.multiselect("Select State", options=state_options, default=["All India"])
             with c2:
                 selected_years = st.multiselect("Select Year", options=sorted(df_vahan['Year'].unique()), default=sorted(df_vahan['Year'].unique()))
             with c3:
@@ -177,7 +180,9 @@ with tab1:
 
         # Filter Data
         filtered_df = df_vahan.copy()
-        if selected_states:
+        
+        # State Filter Logic (Handle 'All India')
+        if selected_states and "All India" not in selected_states:
             filtered_df = filtered_df[filtered_df['State'].isin(selected_states)]
         if selected_years:
             filtered_df = filtered_df[filtered_df['Year'].isin(selected_years)]
@@ -318,60 +323,76 @@ with tab2:
                 api_key=api_key,
             )
             
-            # Enhanced Context Building
+            # Enhanced Context Building: Full Data Dictionary Strategy
             with st.spinner("🧠 Analyst is reading the data..."):
-                # 1. Basic Stats
-                    total_rows = len(df_vahan)
-                    columns = ", ".join(df_vahan.columns)
+                # 1. Overall Stats
+                total_rows = len(df_vahan)
+                all_years = sorted(df_vahan['Year'].unique().tolist())
+                total_volume = df_vahan['Total'].sum()
+                
+                # 2. Year-wise Totals (The "Trend")
+                yearly_totals = df_vahan.groupby('Year')['Total'].sum().to_dict()
+                
+                # 3. Deep Dive: Top Categories & States per Year (Visual Matrix)
+                # We create a simplified structure: {2024: {Top_Cats: [...], Top_States: [...]}}
+                deep_context = {}
+                for yr in all_years[-3:]: # Focus on last 3 years for detailed breakdown to save tokens
+                    yr_df = df_vahan[df_vahan['Year'] == yr]
+                    top_cats = yr_df.groupby('Category')['Total'].sum().nlargest(5).to_dict()
+                    top_states = yr_df.groupby('State')['Total'].sum().nlargest(5).to_dict()
+                    deep_context[yr] = {
+                        "Total": yearly_totals.get(yr, 0),
+                        "Top Categories": top_cats,
+                        "Top States": top_states
+                    }
                     
-                    # 2. Aggregations for context
-                    state_summary = df_vahan.groupby('State')['Total'].sum().nlargest(5).to_dict()
-                    cat_summary = df_vahan.groupby('Category')['Total'].sum().nlargest(5).to_dict()
-                    year_trend = df_vahan.groupby('Year')['Total'].sum().tail(5).to_dict()
-                    
-                    # 3. Sample Data
-                    sample_data = df_vahan.head(5).to_string()
-                    
-                    rich_context = f"""
-                    Dataset Overview:
-                    - Total Rows: {total_rows}
-                    - Columns: {columns}
-                    
-                    Key Aggregates:
-                    - Top 5 States: {state_summary}
-                    - Top 5 Categories: {cat_summary}
-                    - Recent Yearly Trend: {year_trend}
-                    
-                    Sample Data (First 5 Rows):
-                    {sample_data}
-                    """
-                    
-                    system_prompt = f"""You are a Senior Automobile Data Analyst. 
-                    Your goal is to answer the user's question explicitly based on the provided dataset context.
-                    
-                    DATA CONTEXT:
-                    {rich_context}
-                    
-                    GUIDELINES:
-                    1. ONLY use the data provided above. Do not make up numbers.
-                    2. If the user asks for "Growth", calculate it from the Yearly Trend provided.
-                    3. If the answer is not in the summary, say "I need to see the full rows to answer that specific detail, but based on the summary..."
-                    4. Be concise, professional, and point-form where possible.
-                    
-                    User Question: {user_query}
-                    """
-                    
-                    try:
-                        completion = client.chat.completions.create(
-                            model="google/gemini-2.0-flash-001",
-                            messages=[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_query}
-                            ]
-                        )
-                        st.markdown(completion.choices[0].message.content)
-                    except Exception as e:
-                        st.error(f"Analysis Error: {e}")
+                # 4. Global Top Performers (All Time)
+                global_state_rank = df_vahan.groupby('State')['Total'].sum().nlargest(10).to_dict()
+                global_cat_rank = df_vahan.groupby('Category')['Total'].sum().nlargest(10).to_dict()
+
+                rich_context = f"""
+                DATASET SUMMARY:
+                - Total Records: {total_rows}
+                - Years Covered: {all_years}
+                - Total Registered Vehicles: {total_volume}
+
+                YEARLY TRENDS (Total Registrations):
+                {yearly_totals}
+
+                RECENT YEARS DETAILED BREAKDOWN (Last 3 Years):
+                {deep_context}
+
+                ALL-TIME TOP PERFORMERS:
+                - Top 10 States: {global_state_rank}
+                - Top 10 Categories: {global_cat_rank}
+                """
+                
+                system_prompt = f"""You are a Senior Automobile Data Analyst.
+                Your goal is to answer the user's question accurately using ONLY the provided data summary.
+                
+                DATA CONTEXT:
+                {rich_context}
+                
+                GUIDELINES:
+                1. USE THE DATA: If asked "which has more in 2025", look at the 'RECENT YEARS DETAILED BREAKDOWN' for 2025 and compare the Top Categories or States listed there.
+                2. If the user asks for a specific year's data that is in the summary, quote the exact number.
+                3. If the answer is truly not in the summary (e.g., a specific tiny village not in the top lists), state: "The provided summary tracks top performers. I don't have granular data for that specific segment."
+                4. Be concise and professional.
+                
+                User Question: {user_query}
+                """
+                
+                try:
+                    completion = client.chat.completions.create(
+                        model="google/gemini-2.0-flash-001",
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_query}
+                        ]
+                    )
+                    st.markdown(completion.choices[0].message.content)
+                except Exception as e:
+                    st.error(f"Analysis Error: {e}")
 
 # ================================================
 # TAB 3: ADVANCED ANALYTICS
