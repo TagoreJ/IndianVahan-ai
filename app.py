@@ -228,18 +228,44 @@ with tab1:
 
         # Row 2
         col_map, col_bar = st.columns([1, 1])
+        # Row 2
+        col_map, col_bar = st.columns([1, 1])
         with col_map:
             st.subheader("Geo Sales Map 🗺️")
-            map_data = filtered_df.groupby(['State_Clean', 'Lat', 'Lon'])['Total'].sum().reset_index()
+            
+            # For Map: specific logic to show ALL India but highlight selection
+            # distinct from 'filtered_df' which drives the metrics
+            map_base = df_vahan.copy()
+            if selected_years:
+                map_base = map_base[map_base['Year'].isin(selected_years)]
+            if selected_cats:
+                map_base = map_base[map_base['Category'].isin(selected_cats)]
+                
+            # Aggregation for Map
+            map_data = map_base.groupby(['State_Clean', 'Lat', 'Lon'])['Total'].sum().reset_index()
+            
+            # Color Logic
+            if selected_states:
+                # Highlight selected states
+                map_data['Highlight'] = map_data['State_Clean'].apply(
+                    lambda x: 'Selected' if x in [s.split('(')[0].strip() for s in selected_states] else 'Others'
+                )
+                color_col = 'Highlight'
+            else:
+                map_data['Highlight'] = 'All States'
+                color_col = 'Total' # Default to heatmap-like coloring if nothing specifically selected
+
             fig_map = px.scatter_geo(
                 map_data,
                 lat='Lat', lon='Lon',
-                size='Total', color='Total',
+                size='Total', 
+                color=color_col,
                 hover_name='State_Clean',
                 scope='asia',
                 center={'lat': 20.5937, 'lon': 78.9629}, # India Center
                 projection='natural earth',
-                title='Geographic Distribution'
+                title='Geographic Distribution (Highlighting Selection)',
+                color_discrete_map={'Selected': '#ff7f0e', 'Others': '#1f77b4'} if selected_states else None
             )
             fig_map.update_geos(fitbounds="locations", visible=False) # Auto-zoom
             st.plotly_chart(fig_map, use_container_width=True)
@@ -288,13 +314,9 @@ with tab2:
             if "Graph Maker" in mode:
                 st.subheader("Generated Graph")
                 try:
-                    # LAZY IMPORT PANDASAI (Using Agent for compatibility with newer versions)
-                    try:
-                        from pandasai import Agent
-                    except ImportError:
-                        # Fallback for older versions
-                        from pandasai import SmartDataframe as Agent
-                    
+                    # LAZY IMPORT PANDASAI
+                    # Using standard import now that we pinned pandasai<3.0.0
+                    from pandasai import SmartDataframe
                     from pandasai.llm import OpenAI as PandasAI_OpenAI
                     
                     # LLM configuration
@@ -305,10 +327,9 @@ with tab2:
                     }
                     
                     # Re-instantiate with proxy
-                    # Agent replaces SmartDataframe in v2+
-                    agent = Agent(df_vahan, config={"llm": PandasAI_OpenAI(**llm_config)})
+                    agent = SmartDataframe(df_vahan, config={"llm": PandasAI_OpenAI(**llm_config)})
                     
-                    with st.spinner("🤖 Generative AI is thinking..."):
+                    with st.spinner("🤖 Generative AI is thinking... (This may take up to 30 seconds)"):
                         response = agent.chat(user_query)
                     
                     # PandasAI usually returns a path to an image or the result
