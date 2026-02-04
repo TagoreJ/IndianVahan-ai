@@ -193,47 +193,103 @@ with tab1:
         total_vehicles = filtered_df['Total'].sum()
         top_state = filtered_df.groupby('State')['Total'].sum().idxmax() if not filtered_df.empty else "N/A"
         
-        # Growth Metric (Year over Year if available)
-        growth_text = ""
-        if len(selected_years) > 1 or not selected_years:
-            current_year = filtered_df['Year'].max()
-            prev_year = current_year - 1
-            curr_val = filtered_df[filtered_df['Year'] == current_year]['Total'].sum()
-            prev_val = filtered_df[filtered_df['Year'] == prev_year]['Total'].sum()
+        # Growth Metric Calculation
+        growth_text = "N/A"
+        delta_color = "off"
+        if len(selected_years) == 1:
+            current_yr = selected_years[0]
+            prev_yr = current_yr - 1
+            # Get data for prev year same filters (except year)
+            prev_year_df = df_vahan[df_vahan['Year'] == prev_yr]
+            if selected_states:
+                if "All India" not in selected_states:
+                    prev_year_df = prev_year_df[prev_year_df['State'].isin(selected_states)]
+            if selected_cats:
+                prev_year_df = prev_year_df[prev_year_df['Category'].isin(selected_cats)]
+            
+            curr_val = filtered_df['Total'].sum()
+            prev_val = prev_year_df['Total'].sum()
+            
             if prev_val > 0:
                 growth = ((curr_val - prev_val) / prev_val) * 100
-                growth_text = f"{growth:+.1f}% vs {prev_year}"
-            else:
-                growth_text = "N/A"
-        
+                symbol = "⬆️" if growth > 0 else "⬇️"
+                growth_text = f"{symbol} {growth:.1f}% vs {prev_yr}"
+                delta_color = "normal" if growth > 0 else "inverse"
+
         col1, col2, col3 = st.columns(3)
-        col1.metric("Total Vehicles Registered", f"{total_vehicles:,.0f}", delta=growth_text if growth_text else None)
-        col2.metric("Top State (in selection)", top_state)
-        col3.metric("Data Rows", f"{len(filtered_df):,.0f}")
+        col1.markdown(f"""
+            <div class="metric-card">
+                <h3>Total Registrations 🚗</h3>
+                <h2>{total_vehicles:,.0f}</h2>
+                <p style="color: {'lightgreen' if '⬆️' in growth_text else '#ffcccb'}">{growth_text}</p>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        col2.markdown(f"""
+            <div class="metric-card">
+                <h3>Top State 🏆</h3>
+                <h2>{top_state}</h2>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        col3.markdown(f"""
+            <div class="metric-card">
+                <h3>Data Rows 📂</h3>
+                <h2>{len(filtered_df):,.0f}</h2>
+            </div>
+        """, unsafe_allow_html=True)
 
         # Charts
         st.markdown("### 📈 Visualizations")
         
-        # Row 1
-        r1c1, r1c2 = st.columns(2)
+        # ROW 1: Monthly Trend & Growth Table
+        r1c1, r1c2 = st.columns([1.5, 1])
         with r1c1:
-            st.subheader("Yearly Trend 📅")
-            yearly_trend = filtered_df.groupby('Year')['Total'].sum().reset_index()
-            fig_year = px.line(yearly_trend, x='Year', y='Total', markers=True, title='Total Registrations per Year')
-            fig_year.update_traces(line_color='#1f77b4')
-            st.plotly_chart(fig_year, use_container_width=True)
-            
-        with r1c2:
-            st.subheader("Category Distribution 🍭")
-            cat_dist = filtered_df.groupby('Category')['Total'].sum().reset_index()
-            # Add emojis to labels
-            cat_dist['Label'] = cat_dist['Category'].apply(lambda x: f"{get_emoji(x)} {x}")
-            fig_cat = px.pie(cat_dist, values='Total', names='Label', title='Share by Vehicle Category', hole=0.4)
-            st.plotly_chart(fig_cat, use_container_width=True)
+            st.subheader("Monthly Sales Trends 🗓️")
+            if 'Month' in filtered_df.columns:
+                # Helper for Month Sorting
+                month_order = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+                filtered_df['MonthCode'] = pd.Categorical(filtered_df['Month'], categories=month_order, ordered=True)
+                
+                monthly_trend = filtered_df.groupby(['Year', 'MonthCode'])['Total'].sum().reset_index()
+                monthly_trend = monthly_trend.sort_values('MonthCode')
+                
+                fig_monthly = px.line(monthly_trend, x='MonthCode', y='Total', color='Year', markers=True, 
+                                    title='Monthly Sales Performance (YoY)',
+                                    color_discrete_sequence=px.colors.qualitative.Prism)
+                st.plotly_chart(fig_monthly, use_container_width=True)
+            else:
+                st.info("Month column missing for trend analysis.")
 
-        # Row 2
-        col_map, col_bar = st.columns([1, 1])
-        # Row 2
+        with r1c2:
+            st.subheader("Key Metrics by Category 📊")
+            # Calculate metrics per category
+            cat_metrics = []
+            for cat in filtered_df['Category'].unique():
+                cat_df = filtered_df[filtered_df['Category'] == cat]
+                cat_total = cat_df['Total'].sum()
+                
+                # Simple YoY estimation if single year selected
+                yoy_growth = "N/A"
+                if len(selected_years) == 1:
+                     prev_cat_df = df_vahan[(df_vahan['Year'] == selected_years[0]-1) & (df_vahan['Category'] == cat)]
+                     p_val = prev_cat_df['Total'].sum()
+                     if p_val > 0:
+                         g = ((cat_total - p_val) / p_val) * 100
+                         yoy_growth = f"{g:+.1f}%"
+                
+                cat_metrics.append({
+                    "Vehicle Category": cat,
+                    "Total Volume": f"{cat_total:,.0f}",
+                    "YoY Growth %": yoy_growth
+                })
+            
+            metrics_df = pd.DataFrame(cat_metrics)
+            if not metrics_df.empty:
+                metrics_df = metrics_df.set_index("Vehicle Category")
+                st.dataframe(metrics_df, use_container_width=True)
+
+        # ROW 2: Map & State Analysis
         col_map, col_bar = st.columns([1, 1])
         with col_map:
             st.subheader("Geo Sales Map 🗺️")
@@ -249,7 +305,7 @@ with tab1:
             map_data = map_base.groupby(['State_Clean', 'Lat', 'Lon'])['Total'].sum().reset_index()
             
             # Color Logic
-            if selected_states:
+            if selected_states and "All India" not in selected_states:
                 map_data['Highlight'] = map_data['State_Clean'].apply(
                     lambda x: 'Selected' if x in [s.split('(')[0].strip() for s in selected_states] else 'Others'
                 )
@@ -271,7 +327,7 @@ with tab1:
                 zoom=3.5,
                 mapbox_style="carto-positron",
                 title='Geographic Distribution',
-                color_discrete_map=color_map if selected_states else None,
+                color_discrete_map=color_map if selected_states and "All India" not in selected_states else None,
                 size_max=40 # Increase bubble size
             )
             fig_map.update_layout(height=500, margin={"r":0,"t":40,"l":0,"b":0})
@@ -282,7 +338,22 @@ with tab1:
             state_dist = filtered_df.groupby('State')['Total'].sum().reset_index().sort_values('Total', ascending=False).head(10)
             fig_state = px.bar(state_dist, x='State', y='Total', color='Total', title='Top 10 States by Registrations', height=500)
             st.plotly_chart(fig_state, use_container_width=True)
-
+            
+        # ROW 3: Category Pie Chart & Yearly Trend (Moved Down)
+        r3c1, r3c2 = st.columns(2)
+        with r3c1:
+            st.subheader("Category Distribution 🍭")
+            cat_dist = filtered_df.groupby('Category')['Total'].sum().reset_index()
+            cat_dist['Label'] = cat_dist['Category'].apply(lambda x: f"{get_emoji(x)} {x}")
+            fig_cat = px.pie(cat_dist, values='Total', names='Label', title='Share by Vehicle Category', hole=0.4)
+            st.plotly_chart(fig_cat, use_container_width=True)
+            
+        with r3c2:
+            st.subheader("Yearly Trend 📅")
+            yearly_trend = filtered_df.groupby('Year')['Total'].sum().reset_index()
+            fig_year = px.line(yearly_trend, x='Year', y='Total', markers=True, title='Total Registrations per Year')
+            fig_year.update_traces(line_color='#1f77b4')
+            st.plotly_chart(fig_year, use_container_width=True)
         
     else:
         st.warning("No data available. Please check 'vahan.csv'.")
