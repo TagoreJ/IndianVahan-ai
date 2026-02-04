@@ -1,9 +1,10 @@
 streamlit
 pandas
-numpy<2
+numpy
 plotly
 openai
-pydantic
+pandasai
 scikit-learn
 reportlab
-pandasai
+matplotlib
+seaborn
