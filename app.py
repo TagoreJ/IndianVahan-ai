@@ -217,19 +217,19 @@ with tab2:
     st.header("💬 Chat with Data AI")
     
     # API Key Retrieval
-    api_key = st.secrets.get("OPENROUTER_API_KEY") 
-    # Use environment variable as fallback or if secrets not found (common in some local setups)
+    try:
+        api_key = st.secrets["secrets"]["OPENROUTER_API_KEY"]
+    except Exception:
+        api_key = None
+        
     if not api_key:
-         # Hardcoded fallback as requested by user (though secrets is better)
-         api_key = "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"
-    
-    if not api_key:
-        st.error("API Key not found!")
+        st.error("🔑 API Key not found! Please add `OPENROUTER_API_KEY` to `.streamlit/secrets.toml` or Streamlit Cloud Secrets.")
         st.stop()
 
     mode = st.radio("Select AI Mode", ["📊 Graph Maker (PandasAI)", "🧠 Auto Analyst (Expert Chat)"], horizontal=True)
     
     user_query = st.text_area("Ask about your data:", help="e.g., 'Show me the trend of EVs' or 'Why did sales drop in 2020?'")
+
     
     if st.button("🚀 Analyze"):
         if not user_query:
