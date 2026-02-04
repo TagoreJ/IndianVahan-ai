@@ -147,7 +147,7 @@ df_vahan, df_summary = load_data()
 # ================================================
 st.markdown("""
 <div class="header-gradient">
-    <h1>Vahan Data Analyzer Version 1.0</h1>
+    <h1>Vahan Data Analyzer V1.0</h1>
     <p>Comprehensive Insights into Vehicle Registration Data</p>
 </div>
 """, unsafe_allow_html=True)
