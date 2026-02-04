@@ -608,12 +608,36 @@ with tab4:
 # ================================================
 st.markdown("---")
 st.markdown("""
-<div style="text-align: center; color: #666; font-size: 0.8rem;">
-    Data retrieved from <a href="https://vahan.parivahan.gov.in/vahan4dashboard/">vahan.parivahan.gov.in</a> | 
-    Dashboard developed by <a href="https://www.linkedin.com/in/tagorej/">Tagore J</a>
-    <br>
-    <em>Disclaimer: Data extracted via Selenium scraping; subject to extraction limitations.</em>
-    <br>
-    <span style="font-size: 0.7rem; color: #888;">Version 1.0 • More updates coming soon! 🚀</span>
+<style>
+.footer {
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    padding: 20px;
+    border-radius: 10px;
+    border: 1px solid #d1d9e6;
+    text-align: center;
+    color: #444;
+    margin-top: 30px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+}
+.footer a {
+    color: #1f77b4;
+    font-weight: bold;
+    text-decoration: none;
+}
+.footer a:hover {
+    text-decoration: underline;
+}
+</style>
+<div class="footer">
+    <p style="font-size: 1rem; margin-bottom: 10px;">
+        Data retrieved from <a href="https://vahan.parivahan.gov.in/vahan4dashboard/" target="_blank">Vahan Parivahan Dashboard</a> | 
+        Developed by <a href="https://www.linkedin.com/in/tagorej/" target="_blank">Tagore J</a>
+    </p>
+    <p style="font-size: 0.85rem; color: #666; font-style: italic; margin-bottom: 5px;">
+        Data extracted via Selenium automation. Subject to extraction limitations.
+    </p>
+    <p style="font-size: 0.8rem; color: #444; font-weight: bold;">
+        🚀 Version 1.0 • Ready for Action
+    </p>
 </div>
 """, unsafe_allow_html=True)
