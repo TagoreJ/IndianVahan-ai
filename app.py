@@ -288,8 +288,13 @@ with tab2:
             if "Graph Maker" in mode:
                 st.subheader("Generated Graph")
                 try:
-                    # LAZY IMPORT PANDASAI
-                    from pandasai import SmartDataframe
+                    # LAZY IMPORT PANDASAI (Using Agent for compatibility with newer versions)
+                    try:
+                        from pandasai import Agent
+                    except ImportError:
+                        # Fallback for older versions
+                        from pandasai import SmartDataframe as Agent
+                    
                     from pandasai.llm import OpenAI as PandasAI_OpenAI
                     
                     # LLM configuration
@@ -300,9 +305,11 @@ with tab2:
                     }
                     
                     # Re-instantiate with proxy
-                    agent = SmartDataframe(df_vahan, config={"llm": PandasAI_OpenAI(**llm_config)})
+                    # Agent replaces SmartDataframe in v2+
+                    agent = Agent(df_vahan, config={"llm": PandasAI_OpenAI(**llm_config)})
                     
-                    response = agent.chat(user_query)
+                    with st.spinner("🤖 Generative AI is thinking..."):
+                        response = agent.chat(user_query)
                     
                     # PandasAI usually returns a path to an image or the result
                     if isinstance(response, str) and (response.endswith('.png') or response.endswith('.jpg')):
@@ -334,14 +341,15 @@ with tab2:
                 """
                 
                 try:
-                    completion = client.chat.completions.create(
-                        model="google/gemini-2.0-flash-001",
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": user_query}
-                        ]
-                    )
-                    st.markdown(completion.choices[0].message.content)
+                    with st.spinner("🧠 Analyst is processing insights..."):
+                        completion = client.chat.completions.create(
+                            model="google/gemini-2.0-flash-001",
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_query}
+                            ]
+                        )
+                        st.markdown(completion.choices[0].message.content)
                 except Exception as e:
                     st.error(f"Analysis Error: {e}")
 
