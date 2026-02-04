@@ -314,9 +314,12 @@ with tab2:
             if "Graph Maker" in mode:
                 st.subheader("Generated Graph")
                 try:
-                    # LAZY IMPORT PANDASAI
-                    # Using standard import now that we pinned pandasai<3.0.0
-                    from pandasai import SmartDataframe
+                    # LAZY IMPORT PANDASAI (Compatible with v2 and v3)
+                    try:
+                        from pandasai import Agent
+                    except ImportError:
+                        from pandasai import SmartDataframe as Agent
+                    
                     from pandasai.llm import OpenAI as PandasAI_OpenAI
                     
                     # LLM configuration
@@ -326,8 +329,11 @@ with tab2:
                         "model": "google/gemini-2.0-flash-001" 
                     }
                     
+                    # Helper to manage cache path to avoid permission errors
+                    os.environ['PANDASAI_CACHE_DIR'] = '/tmp/pandasai_cache'
+                    
                     # Re-instantiate with proxy
-                    agent = SmartDataframe(df_vahan, config={"llm": PandasAI_OpenAI(**llm_config)})
+                    agent = Agent(df_vahan, config={"llm": PandasAI_OpenAI(**llm_config)})
                     
                     with st.spinner("🤖 Generative AI is thinking... (This may take up to 30 seconds)"):
                         response = agent.chat(user_query)
@@ -339,7 +345,7 @@ with tab2:
                         st.write(response)
                         
                 except Exception as e:
-                    st.error(f"PandasAI Error (Check compatibility): {e}")
+                    st.error(f"PandasAI Error: {e}")
             
             else: # Auto Analyst
                 st.subheader("Analyst Insight")
@@ -348,21 +354,50 @@ with tab2:
                     api_key=api_key,
                 )
                 
-                # Context building
-                data_summary = df_vahan.describe(include='all').to_string()
-                
-                system_prompt = f"""You are an Expert Automobile Industry Data Analyst.
-                You have access to a dataset with the following summary:
-                {data_summary}
-                
-                User question: {user_query}
-                
-                Provide a detailed, professional answer using automobile domain knowledge. 
-                Explain trends, seasonality, or anomalies if relevant. Use emojis for categories.
-                """
-                
-                try:
-                    with st.spinner("🧠 Analyst is processing insights..."):
+                # Enhanced Context Building
+                with st.spinner("🧠 Analyst is reading the data..."):
+                    # 1. Basic Stats
+                    total_rows = len(df_vahan)
+                    columns = ", ".join(df_vahan.columns)
+                    
+                    # 2. Aggregations for context
+                    state_summary = df_vahan.groupby('State')['Total'].sum().nlargest(5).to_dict()
+                    cat_summary = df_vahan.groupby('Category')['Total'].sum().nlargest(5).to_dict()
+                    year_trend = df_vahan.groupby('Year')['Total'].sum().tail(5).to_dict()
+                    
+                    # 3. Sample Data
+                    sample_data = df_vahan.head(5).to_string()
+                    
+                    rich_context = f"""
+                    Dataset Overview:
+                    - Total Rows: {total_rows}
+                    - Columns: {columns}
+                    
+                    Key Aggregates:
+                    - Top 5 States: {state_summary}
+                    - Top 5 Categories: {cat_summary}
+                    - Recent Yearly Trend: {year_trend}
+                    
+                    Sample Data (First 5 Rows):
+                    {sample_data}
+                    """
+                    
+                    system_prompt = f"""You are a Senior Automobile Data Analyst. 
+                    Your goal is to answer the user's question explicitly based on the provided dataset context.
+                    
+                    DATA CONTEXT:
+                    {rich_context}
+                    
+                    GUIDELINES:
+                    1. ONLY use the data provided above. Do not make up numbers.
+                    2. If the user asks for "Growth", calculate it from the Yearly Trend provided.
+                    3. If the answer is not in the summary, say "I need to see the full rows to answer that specific detail, but based on the summary..."
+                    4. Be concise, professional, and point-form where possible.
+                    
+                    User Question: {user_query}
+                    """
+                    
+                    try:
                         completion = client.chat.completions.create(
                             model="google/gemini-2.0-flash-001",
                             messages=[
@@ -371,8 +406,8 @@ with tab2:
                             ]
                         )
                         st.markdown(completion.choices[0].message.content)
-                except Exception as e:
-                    st.error(f"Analysis Error: {e}")
+                    except Exception as e:
+                        st.error(f"Analysis Error: {e}")
 
 # ================================================
 # TAB 3: ADVANCED ANALYTICS
