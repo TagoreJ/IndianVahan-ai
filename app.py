@@ -234,46 +234,48 @@ with tab1:
             st.subheader("Geo Sales Map 🗺️")
             
             # For Map: specific logic to show ALL India but highlight selection
-            # distinct from 'filtered_df' which drives the metrics
             map_base = df_vahan.copy()
             if selected_years:
                 map_base = map_base[map_base['Year'].isin(selected_years)]
             if selected_cats:
                 map_base = map_base[map_base['Category'].isin(selected_cats)]
                 
-            # Aggregation for Map
+            # Aggregation
             map_data = map_base.groupby(['State_Clean', 'Lat', 'Lon'])['Total'].sum().reset_index()
             
             # Color Logic
             if selected_states:
-                # Highlight selected states
                 map_data['Highlight'] = map_data['State_Clean'].apply(
                     lambda x: 'Selected' if x in [s.split('(')[0].strip() for s in selected_states] else 'Others'
                 )
                 color_col = 'Highlight'
+                color_map = {'Selected': '#ff7f0e', 'Others': '#1f77b4'}
             else:
                 map_data['Highlight'] = 'All States'
-                color_col = 'Total' # Default to heatmap-like coloring if nothing specifically selected
+                color_col = 'Total'
+                color_map = None
 
-            fig_map = px.scatter_geo(
+            # Switch to Scatter Mapbox for better visual context (OpenStreetMap/Carto)
+            fig_map = px.scatter_mapbox(
                 map_data,
                 lat='Lat', lon='Lon',
                 size='Total', 
                 color=color_col,
                 hover_name='State_Clean',
-                scope='asia',
-                center={'lat': 20.5937, 'lon': 78.9629}, # India Center
-                projection='natural earth',
-                title='Geographic Distribution (Highlighting Selection)',
-                color_discrete_map={'Selected': '#ff7f0e', 'Others': '#1f77b4'} if selected_states else None
+                center={'lat': 20.5937, 'lon': 78.9629},
+                zoom=3.5,
+                mapbox_style="carto-positron",
+                title='Geographic Distribution',
+                color_discrete_map=color_map if selected_states else None,
+                size_max=40 # Increase bubble size
             )
-            fig_map.update_geos(fitbounds="locations", visible=False) # Auto-zoom
+            fig_map.update_layout(height=500, margin={"r":0,"t":40,"l":0,"b":0})
             st.plotly_chart(fig_map, use_container_width=True)
 
         with col_bar:
             st.subheader("State-wise Analysis 🎢")
             state_dist = filtered_df.groupby('State')['Total'].sum().reset_index().sort_values('Total', ascending=False).head(10)
-            fig_state = px.bar(state_dist, x='State', y='Total', color='Total', title='Top 10 States by Registrations', height=400)
+            fig_state = px.bar(state_dist, x='State', y='Total', color='Total', title='Top 10 States by Registrations', height=500)
             st.plotly_chart(fig_state, use_container_width=True)
 
         
@@ -285,11 +287,12 @@ with tab1:
 # TAB 2: CHAT WITH DATA
 # ================================================
 with tab2:
-    st.header("💬 Chat with Data AI")
+    st.header("🧠 Expert Auto Analyst")
+    st.write("Ask detailed questions about the automobile trends, and our AI Expert will analyze the summaries for you.")
     
     # API Key Retrieval
     try:
-        # Check for direct key or nested key (handles both local [secrets] section and Cloud's flat secrets)
+        # Check for direct key or nested key
         if "OPENROUTER_API_KEY" in st.secrets:
             api_key = st.secrets["OPENROUTER_API_KEY"]
         elif "secrets" in st.secrets and "OPENROUTER_API_KEY" in st.secrets["secrets"]:
@@ -303,60 +306,21 @@ with tab2:
         st.error("🔑 API Key not found! Please add `OPENROUTER_API_KEY` to `.streamlit/secrets.toml` or Streamlit Cloud Secrets.")
         st.stop()
 
-    mode = st.radio("Select AI Mode", ["📊 Graph Maker (PandasAI)", "🧠 Auto Analyst (Expert Chat)"], horizontal=True)
-    
-    user_query = st.text_area("Ask about your data:", help="e.g., 'Show me the trend of EVs' or 'Why did sales drop in 2020?'")
+    user_query = st.text_area("Ask the Expert:", help="e.g., 'Explain the growth of EV vehicles compared to traditional ones in 2024'")
     
     if st.button("🚀 Analyze"):
         if not user_query:
             st.warning("Please enter a question.")
         else:
-            if "Graph Maker" in mode:
-                st.subheader("Generated Graph")
-                try:
-                    # LAZY IMPORT PANDASAI (Compatible with v2 and v3)
-                    try:
-                        from pandasai import Agent
-                    except ImportError:
-                        from pandasai import SmartDataframe as Agent
-                    
-                    from pandasai.llm import OpenAI as PandasAI_OpenAI
-                    
-                    # LLM configuration
-                    llm_config = {
-                        "api_key": api_key,
-                        "openai_proxy": "https://openrouter.ai/api/v1",
-                        "model": "google/gemini-2.0-flash-001" 
-                    }
-                    
-                    # Helper to manage cache path to avoid permission errors
-                    os.environ['PANDASAI_CACHE_DIR'] = '/tmp/pandasai_cache'
-                    
-                    # Re-instantiate with proxy
-                    agent = Agent(df_vahan, config={"llm": PandasAI_OpenAI(**llm_config)})
-                    
-                    with st.spinner("🤖 Generative AI is thinking... (This may take up to 30 seconds)"):
-                        response = agent.chat(user_query)
-                    
-                    # PandasAI usually returns a path to an image or the result
-                    if isinstance(response, str) and (response.endswith('.png') or response.endswith('.jpg')):
-                        st.image(response)
-                    else:
-                        st.write(response)
-                        
-                except Exception as e:
-                    st.error(f"PandasAI Error: {e}")
+            st.subheader("Analyst Insight")
+            client = OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=api_key,
+            )
             
-            else: # Auto Analyst
-                st.subheader("Analyst Insight")
-                client = OpenAI(
-                    base_url="https://openrouter.ai/api/v1",
-                    api_key=api_key,
-                )
-                
-                # Enhanced Context Building
-                with st.spinner("🧠 Analyst is reading the data..."):
-                    # 1. Basic Stats
+            # Enhanced Context Building
+            with st.spinner("🧠 Analyst is reading the data..."):
+                # 1. Basic Stats
                     total_rows = len(df_vahan)
                     columns = ", ".join(df_vahan.columns)
                     
